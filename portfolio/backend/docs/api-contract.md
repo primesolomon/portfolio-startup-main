@@ -1,8 +1,8 @@
 # Portfolio CMS API Contract
 
-**Status:** MVP draft; endpoints described here are not implemented yet.
+**Status:** MVP agreement; implementation follows this contract.
 
-This document defines the proposed agreement between the portfolio frontend and the Express backend. It follows the MVP in [ProjectRequirement.md](./ProjectRequirement.md). Items marked **TBD** need a decision before the related endpoint is implemented.
+This document defines the MVP agreement between the portfolio frontend and the Express backend. It follows the MVP in [ProjectRequirement.md](./ProjectRequirement.md).
 
 ## 1. Conventions
 
@@ -10,8 +10,9 @@ This document defines the proposed agreement between the portfolio frontend and 
 - JSON requests use `Content-Type: application/json` and JSON responses use `application/json`, except image uploads.
 - Successful JSON responses use a `{ "data": ... }` envelope.
 - Dates use ISO 8601 UTC strings.
-- IDs are integers in this draft; confirm against the final database schema.
+- Resource IDs are positive unsigned integers.
 - Product status values are `draft`, `published`, and `archived`.
+- Strings are trimmed before validation and persistence. Length limits below are Unicode character counts unless specified as bytes.
 - There is no public admin-account registration endpoint. The two founder accounts are provisioned through a private setup/seed process.
 
 ## 2. Authentication
@@ -22,7 +23,7 @@ Admin endpoints require a valid access token in the header:
 Authorization: Bearer <accessToken>
 ```
 
-The login endpoint returns a bearer token. The frontend signs out by discarding its token. Token lifetime and whether server-side token revocation is needed are **TBD**. Both founders have the same permissions in the MVP.
+The login endpoint returns a bearer token that expires after one hour. The MVP uses stateless JWTs with no refresh or revocation endpoint; signing out discards the token in the frontend. Both founders have the same permissions in the MVP.
 
 ### `POST /api/auth/login`
 
@@ -112,7 +113,14 @@ Success `200`:
 }
 ```
 
-The fields shown are a proposed starting shape; exact startup, founder, About, and Contact fields are **TBD**. This response must not expose the private email-delivery configuration used by the Contact form.
+The response fields are:
+
+- `startup`: `name` (maximum 200 characters), `tagline` (maximum 500), and `description` (maximum 10,000).
+- `founders`: ordered by `displayOrder`; each has `id`, `name` (maximum 150), `role` (maximum 150), nullable `biography` (maximum 5,000), nullable `imageUrl` (HTTP(S), maximum 2,048), and `displayOrder`.
+- `about`: `heading` (maximum 200) and `body` (maximum 10,000).
+- `contact`: `heading` (maximum 200), `body` (maximum 5,000), nullable `email` (valid email, maximum 254), and nullable `phone` (maximum 50).
+
+Site content fields may be empty while being configured. Omitted sections in an admin update remain unchanged. This response must not expose the private email-delivery configuration used by the Contact form.
 
 ### `POST /api/contact-messages`
 
@@ -139,7 +147,7 @@ Success `202`:
 }
 ```
 
-Contact form fields, validation rules, mail delivery provider, and behavior when delivery fails are **TBD**. The API must validate input and must not report success if it cannot hand off the message for delivery.
+The request is trimmed and validated as follows: `name` is required (1–120 characters), `email` is required and valid (maximum 254 characters), and `message` is required (10–5,000 characters). Messages are not stored. Delivery uses a configured SMTP relay; the recipient and SMTP credentials are backend environment configuration, never public site content. Return `202` only after the relay accepts the message. Return `503 DELIVERY_UNAVAILABLE` if delivery is not configured and `502 DELIVERY_FAILED` if handoff fails. Do not return success on a delivery failure.
 
 ## 4. Public products/projects
 
@@ -164,7 +172,7 @@ Success `200`:
       "summary": "A short product summary.",
       "description": "The full public product description.",
       "coverImageUrl": "https://cdn.example.com/example-product.jpg",
-      "category": "Tools",
+      "category": "Analytics",
       "projectUrl": "https://example.com",
       "repositoryUrl": null,
       "featured": true,
@@ -182,6 +190,18 @@ Return one published product/project by slug. Return `404 NOT_FOUND` when it doe
 Success `200` returns the same product object shape as an item in `GET /api/products`.
 
 Pagination is not included in the initial contract; revisit if the product list needs it.
+
+Products use these validation rules:
+
+- `title`: required, 3–200 characters.
+- `slug`: required, 1–220 characters, lowercase ASCII letters/digits separated by single hyphens (`^[a-z0-9]+(?:-[a-z0-9]+)*$`). The frontend supplies it; the API does not generate it. Slugs are unique and may be changed when editing. A duplicate returns `409 CONFLICT`.
+- `summary`: required, 1–500 characters.
+- `description`: required, 1–10,000 characters.
+- `category`: required and one of `Analytics`, `Project Management`, `Security`, `Developer Tools`, `Media`, or `General`, matching the admin selector.
+- `coverImageUrl`, `projectUrl`, and `repositoryUrl`: nullable. Non-null values must be valid HTTP(S) URLs no longer than 2,048 characters.
+- `featured`: boolean, default `false`.
+
+The database generates integer IDs and UTC timestamps. The frontend’s admin form requires title, slug, summary, description, and category; an image and external links are optional.
 
 ## 5. Admin CMS content
 
@@ -202,9 +222,26 @@ Example request:
 }
 ```
 
+To edit founders, submit the complete replacement array. Existing IDs are preserved; founder creation and deletion remain outside the MVP:
+
+```json
+{
+  "founders": [
+    {
+      "id": 1,
+      "name": "Founder Name",
+      "role": "Co-founder",
+      "biography": "Updated biography.",
+      "imageUrl": null,
+      "displayOrder": 1
+    }
+  ]
+}
+```
+
 Success `200` returns the updated public content in the same shape as `GET /api/site-content`.
 
-The exact editable fields and whether founder entries are updated by ID or replaced as a collection are **TBD**.
+Editable fields are exactly those returned by `GET /api/site-content`. A `founders` update is a complete replacement array, matching the frontend’s founders editor; each entry must include its `id` and all fields. The replacement is atomic, preserves submitted IDs, and uses `displayOrder` for public ordering. Founder creation and deletion are not exposed in the MVP; founder records are provisioned through the private seed/setup process.
 
 ## 6. Admin products/projects
 
@@ -229,7 +266,7 @@ Proposed request:
   "summary": "A short product summary.",
   "description": "The full product description.",
   "coverImageUrl": "https://cdn.example.com/example-product.jpg",
-  "category": "Tools",
+  "category": "Analytics",
   "projectUrl": "https://example.com",
   "repositoryUrl": null,
   "featured": false
@@ -238,13 +275,15 @@ Proposed request:
 
 Success `201` returns the created product object, including its `id`, `status`, `createdAt`, and `updatedAt`.
 
+The create request uses the product validation rules in section 4. `status` is not accepted on create; a new record is always a draft.
+
 ### `GET /api/admin/products/:id`
 
 Return a single product/project of any status. Success `200` returns the admin product object. Missing records return `404 NOT_FOUND`.
 
 ### `PATCH /api/admin/products/:id`
 
-Update product content without changing its publication status. The request accepts any editable product fields shown above. Success `200` returns the updated product object.
+Update product content without changing its publication status. The request accepts any editable product fields shown in section 4, including `slug`, but not `status`. Success `200` returns the updated product object.
 
 ### `PATCH /api/admin/products/:id/status`
 
@@ -258,7 +297,7 @@ Request:
 }
 ```
 
-Allowed values are `draft`, `published`, and `archived`. Unpublishing means changing the status to `draft`. The backend must reject publishing when required content is missing or invalid; the required fields and exact transition rules are **TBD**.
+Allowed values are `draft`, `published`, and `archived`. Any transition between these values is allowed, including restoring an archived product to draft. Publishing is rejected with `400 VALIDATION_ERROR` unless all required product fields pass validation. Unpublishing means changing the status to `draft`.
 
 Success `200` returns the updated product object.
 
@@ -282,7 +321,7 @@ Success `201`:
 }
 ```
 
-The frontend uses the returned `url` as `coverImageUrl` when creating or updating the product. Storage provider, supported file types, maximum size, and image processing are **TBD**. Reject unsupported file types with `415 UNSUPPORTED_MEDIA_TYPE` and oversized files with `413 FILE_TOO_LARGE`.
+The frontend uses the returned `url` as `coverImageUrl` when creating or updating the product. The backend validates the image and uploads it to the configured Cloudinary account; the returned HTTPS URL is stored with the product. Uploads use server-generated public IDs in the configured Cloudinary folder. Previously uploaded local files may continue to be served from `/uploads/product-covers/` using `UPLOAD_DIR`. Accept only JPEG, PNG, and WebP images, verify the file content matches the declared type, and limit files to 4 MiB. Do not accept SVG or transform images in the MVP. Reject unsupported types with `415 UNSUPPORTED_MEDIA_TYPE`, oversized files with `413 FILE_TOO_LARGE`, missing Cloudinary configuration with `503 UPLOAD_UNAVAILABLE`, and provider failures with `502 UPLOAD_FAILED`.
 
 ## 8. Error format and status codes
 
@@ -313,18 +352,24 @@ Errors use a consistent JSON envelope:
 | `409` | Conflict, such as a duplicate slug | `CONFLICT` |
 | `413` | Uploaded file exceeds the configured limit | `FILE_TOO_LARGE` |
 | `415` | Unsupported upload media type | `UNSUPPORTED_MEDIA_TYPE` |
+| `502` | Contact message could not be handed to the SMTP relay | `DELIVERY_FAILED` |
+| `503` | Contact message delivery is not configured | `DELIVERY_UNAVAILABLE` |
+| `502` | Cloud image storage could not accept an image | `UPLOAD_FAILED` |
+| `503` | Cloud image storage is not configured | `UPLOAD_UNAVAILABLE` |
 | `500` | Unexpected server failure | `INTERNAL_ERROR` |
 
 Error responses must not expose stack traces, credentials, tokens, or private mail-provider details.
 
-## 9. Decisions to confirm before implementation
+## 9. Deployment configuration
 
-- Exact required and optional product fields; slug generation and duplicate handling.
-- Exact editable fields and update behavior for startup, founders, About, and Contact.
-- Contact form fields, recipient address, delivery provider, and failure handling.
-- Bearer-token lifetime and logout/session invalidation behavior.
-- Product image storage provider, supported formats, size limits, and processing.
-- Whether product listing needs pagination.
+The following values must be supplied at deployment and must not be committed:
+
+- `CONTACT_RECIPIENT_EMAIL`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, and `SMTP_FROM` (the verified sender address).
+- `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, and `CLOUDINARY_API_SECRET`.
+- `UPLOAD_DIR` only when serving previously uploaded local covers; keep those files available while records still reference them.
+- `JWT_SECRET` (at least 32 characters); access tokens expire after one hour.
+
+Pagination and image processing are out of scope for the initial release.
 
 ## 10. Related documents
 

@@ -84,16 +84,15 @@ A founder or other authorized user who signs in to manage content through the CM
 
 The MVP product/project record includes:
 
-- Title and URL-friendly slug.
-- Short summary and full description.
-- One uploaded cover image.
-- Category.
-- Optional project and repository links.
-- Featured status.
-- Publication status: draft, published, or archived.
+- Title (3–200 characters), unique URL-friendly slug (lowercase letters/digits with single hyphens, 1–220 characters), summary (1–500 characters), and description (1–10,000 characters).
+- One optional uploaded cover image (JPEG, PNG, or WebP; up to 4 MiB).
+- Required category: Analytics, Project Management, Security, Developer Tools, Media, or General.
+- Optional HTTP(S) project and repository links.
+- Featured status, defaulting to false.
+- Publication status: draft, published, or archived. New entries start as drafts; all status transitions are allowed, but publishing requires all required product content to be valid.
 - Created and updated timestamps.
 
-The exact required/optional rules for fields, image constraints, and image storage approach remain to be agreed. The API contract and database schema should reflect those decisions.
+The [API contract](./api-contract.md) is the authoritative source for field validation, endpoint behavior, and error responses. MVP image files are stored on the backend filesystem; deployments must provide persistent storage.
 
 ## 7. Content management boundaries
 
@@ -123,16 +122,14 @@ The exact required/optional rules for fields, image constraints, and image stora
 - Admin-only API operations are protected by backend authentication and authorization.
 - Public pages and admin workflows provide usable mobile layouts and clear feedback for errors and empty states.
 
-## 10. Open decisions
+## 10. Remaining project decisions
 
-These implementation and content details can be finalized before the corresponding work begins:
+These project-specific values still need to be supplied; they do not change the agreed API shapes:
 
-1. What startup and founder details, biographies, and images should appear publicly?
-2. Which fields are required for products/projects, and what fields are required on the Contact form?
-3. What email address and delivery service will receive Contact form submissions?
-4. Where will uploaded product images be stored, and what file types and size limits are allowed?
-5. What branding, navigation, and visual design should the public site use?
-6. Where will the frontend, API, and database be deployed?
+1. What real startup/founder details, biographies, and images should replace the preview content?
+2. Which configured mailbox and SMTP credentials will receive Contact form submissions?
+3. What branding and visual design should replace the current preview branding?
+4. Where will the frontend, API, database, and persistent upload directory be deployed?
 
 ## 11. Technical references
 
