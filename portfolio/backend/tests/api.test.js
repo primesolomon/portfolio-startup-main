@@ -120,6 +120,36 @@ test('public endpoints return contract data and apply public filters', async () 
   await request(app).get('/api/products?category=not-real').expect(400);
 });
 
+test('security headers are enabled and Express version is not exposed', async () => {
+  const response = await request(app).get('/health').expect(200);
+  assert.equal(response.headers['x-powered-by'], undefined);
+  assert.equal(response.headers['x-content-type-options'], 'nosniff');
+  assert.equal(response.headers['x-frame-options'], 'SAMEORIGIN');
+});
+
+test('login endpoint rate-limits repeated attempts outside test mode', async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  process.env.NODE_ENV = 'production';
+  const limitedApp = createApp(services);
+
+  try {
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      await request(limitedApp)
+        .post('/api/auth/login')
+        .send({ email: 'admin@example.com', password: 'test-password' })
+        .expect(200);
+    }
+    const limited = await request(limitedApp)
+      .post('/api/auth/login')
+      .send({ email: 'admin@example.com', password: 'test-password' })
+      .expect(429);
+    assert.equal(limited.body.error.code, 'RATE_LIMITED');
+  } finally {
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
+  }
+});
+
 test('admin endpoints require a bearer token and validate product payloads', async () => {
   await request(app).get('/api/admin/products').expect(401);
   await request(app)

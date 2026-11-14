@@ -1,5 +1,7 @@
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const { rateLimit } = require('express-rate-limit');
 const { corsOptions } = require('./config/cors');
 const HttpError = require('./utils/http-error');
 const authService = require('./modules/auth/auth.service');
@@ -18,9 +20,31 @@ const {
 } = require('./modules/site-content/site-content.route');
 const { createContactRouter } = require('./modules/contact/contact.route');
 const { createUploadsRouter } = require('./modules/uploads/uploads.route');
+const pool = require('./config/database');
 
 function createApp(services = {}) {
   const app = express();
+  const trustedProxyHops = Number(process.env.TRUST_PROXY || 0);
+  if (!Number.isInteger(trustedProxyHops) || trustedProxyHops < 0 || trustedProxyHops > 5) {
+    throw new Error('TRUST_PROXY must be a whole number between 0 and 5.');
+  }
+  if (trustedProxyHops > 0) app.set('trust proxy', trustedProxyHops);
+
+  const createLimiter = (limit, windowMs) => rateLimit({
+    windowMs,
+    limit,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    skip: () => process.env.NODE_ENV === 'test',
+    handler(req, res) {
+      res.status(429).json({
+        error: {
+          code: 'RATE_LIMITED',
+          message: 'Too many requests. Please try again later.',
+        },
+      });
+    },
+  });
   const selected = {
     auth: services.auth || authService,
     products: services.products || productService,
@@ -30,8 +54,12 @@ function createApp(services = {}) {
   };
 
   app.disable('x-powered-by');
+  app.use(helmet({ contentSecurityPolicy: false }));
   app.use(cors(corsOptions()));
   app.use(express.json({ limit: '1mb' }));
+  app.use('/api/auth/login', createLimiter(10, 15 * 60 * 1000));
+  app.use('/api/contact-messages', createLimiter(5, 15 * 60 * 1000));
+  app.use('/api/admin/uploads', createLimiter(20, 15 * 60 * 1000));
   app.use('/uploads/product-covers', express.static(uploadService.getUploadDir(), {
     fallthrough: true,
     dotfiles: 'deny',
@@ -41,6 +69,20 @@ function createApp(services = {}) {
 
   app.get('/health', (req, res) => {
     res.status(200).json({ data: { status: 'ok' } });
+  });
+  app.get('/ready', async (req, res, next) => {
+    try {
+      await pool.query('SELECT 1');
+      return res.status(200).json({ data: { status: 'ready' } });
+    } catch (error) {
+      console.error('Readiness check failed.', error.code || error.name);
+      return res.status(503).json({
+        error: {
+          code: 'NOT_READY',
+          message: 'The service is temporarily unavailable.',
+        },
+      });
+    }
   });
   app.use('/api/auth', createAuthRouter(selected.auth));
   app.use('/api/site-content', createPublicSiteContentRouter(selected.siteContent));

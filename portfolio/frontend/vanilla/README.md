@@ -14,7 +14,7 @@ The vanilla app uses browser ES modules and keeps its existing `index.html` entr
 
 The app loads public content and products from the backend and uses bearer-token authentication for admin operations. The token is stored in this browser's local storage and discarded on sign-out or expiration. Admin accounts must be provisioned by the backend; there is no public registration.
 
-Run `npm run dev` from `../../backend` to start both the API and frontend. Open `http://127.0.0.1:8765`; the API listens on port 3000. The default API base is `http://localhost:3000/api`, set on the `<html data-api-base-url>` attribute in `index.html`. Do not open the page with `file://`; the browser's opaque file origin is not allowed by default.
+Run `npm run dev` from `../../backend` to start both the API and frontend. Open `http://127.0.0.1:8765`; the API listens on port 3000. Local development automatically uses that API. In production, the frontend defaults to same-origin `/api`; if the API is on a different host, set `data-api-base-url="https://your-api-host/api"` on the `<html>` element and allow the exact frontend origin in backend `CORS_ORIGINS`. Do not open the page with `file://`; the browser's opaque file origin is not allowed by default.
 
 Product image files upload to the backend when the product is saved; the backend validates them, sends them to Cloudinary, and saves the returned secure URL with the product. Contact submissions report success only after the configured SMTP relay accepts the message; if SMTP is not configured, the backend returns an explicit unavailable error and the form retains the visitor's message.
 

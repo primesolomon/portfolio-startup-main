@@ -1,7 +1,12 @@
 import { saveSession, state } from './core.js';
 
+const localDevelopment = ['localhost', '127.0.0.1'].includes(window.location.hostname)
+  && window.location.port === '8765';
+const configuredApiBaseUrl = document.documentElement.dataset.apiBaseUrl?.trim();
 const API_BASE_URL = (
-  document.documentElement.dataset.apiBaseUrl || 'http://localhost:3000/api'
+  localDevelopment
+    ? `${window.location.protocol}//${window.location.hostname}:3000/api`
+    : configuredApiBaseUrl || '/api'
 ).replace(/\/+$/, '');
 
 export class ApiError extends Error {

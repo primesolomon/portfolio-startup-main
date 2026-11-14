@@ -368,6 +368,8 @@ The following values must be supplied at deployment and must not be committed:
 - `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, and `CLOUDINARY_API_SECRET`.
 - `UPLOAD_DIR` only when serving previously uploaded local covers; keep those files available while records still reference them.
 - `JWT_SECRET` (at least 32 characters); access tokens expire after one hour.
+- `CORS_ORIGINS` must contain the frontend's exact HTTPS origin(s) in production.
+- `CONTACT_RECIPIENT_EMAIL`, SMTP settings, and Cloudinary settings must be valid before enabling their respective production workflows.
 
 Pagination and image processing are out of scope for the initial release.
 

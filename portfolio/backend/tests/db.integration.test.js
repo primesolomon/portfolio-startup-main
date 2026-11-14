@@ -21,6 +21,7 @@ test.after(async () => {
 test('database-backed admin, product, and public routes follow the contract', {
   skip: !enabled,
 }, async () => {
+  await request(app).get('/ready').expect(200, { data: { status: 'ready' } });
   const suffix = crypto.randomUUID();
   const email = `integration-${suffix}@example.invalid`;
   const slug = `integration-${suffix}`;
